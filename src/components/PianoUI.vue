@@ -42,6 +42,14 @@
                 {{ note.name }}
             </span>
         </div>
+        <q-inner-loading
+            :showing="!synthLoaded"
+            color="accent"
+            label="Loading keyboard..."
+            label-class="text-white"
+            label-style="font-size: 1.1em"
+            dark
+        />
     </div>
 </template>
   
@@ -127,6 +135,8 @@ export default {
             },
         ];
 
+        const synthLoaded = ref(false);
+
         const synth = new Tone.Sampler({
             urls: {
                 A0: 'A0.mp3',
@@ -162,10 +172,12 @@ export default {
             },
             release: 10,
             baseUrl: 'https://tonejs.github.io/audio/salamander/',
+            onload: () => {
+                synthLoaded.value = true;
+            },
         }).toDestination();
 
         const activeNotes = ref<Note[]>([]);
-
         const keyList = computed(() => {
             const keys: Note[] = [];
 
@@ -265,6 +277,8 @@ export default {
             whiteKeys,
             blackKeys,
             containerStyle,
+            synth,
+            synthLoaded,
             getKeyStyle,
             playNote,
             releaseNote,
