@@ -61,48 +61,21 @@ export default {
             type: Boolean,
             default: false,
         },
+        totalNotes: {
+            type: Number,
+            default: 88,
+        },
+        startOctave: {
+            type: Number,
+            default: 0,
+        },
+        startNote: {
+            type: Number,
+            default: 9,
+        },
     },
     name: 'PianoUI',
     setup(props) {
-        const synth = new Tone.Sampler({
-            urls: {
-                A0: 'A0.mp3',
-                C1: 'C1.mp3',
-                'D#1': 'Ds1.mp3',
-                'F#1': 'Fs1.mp3',
-                A1: 'A1.mp3',
-                C2: 'C2.mp3',
-                'D#2': 'Ds2.mp3',
-                'F#2': 'Fs2.mp3',
-                A2: 'A2.mp3',
-                C3: 'C3.mp3',
-                'D#3': 'Ds3.mp3',
-                'F#3': 'Fs3.mp3',
-                A3: 'A3.mp3',
-                C4: 'C4.mp3',
-                'D#4': 'Ds4.mp3',
-                'F#4': 'Fs4.mp3',
-                A4: 'A4.mp3',
-                C5: 'C5.mp3',
-                'D#5': 'Ds5.mp3',
-                'F#5': 'Fs5.mp3',
-                A5: 'A5.mp3',
-                C6: 'C6.mp3',
-                'D#6': 'Ds6.mp3',
-                'F#6': 'Fs6.mp3',
-                A6: 'A6.mp3',
-                C7: 'C7.mp3',
-                'D#7': 'Ds7.mp3',
-                'F#7': 'Fs7.mp3',
-                A7: 'A7.mp3',
-                C8: 'C8.mp3',
-            },
-            release: 10,
-            baseUrl: 'https://tonejs.github.io/audio/salamander/',
-        }).toDestination();
-
-        const keyList = ref<Note[]>([]);
-
         const baseNotes = [
             {
                 name: 'C',
@@ -154,27 +127,76 @@ export default {
             },
         ];
 
-        const totalNotes = 88;
-        let currentOctave = 0;
-        let currentIndex = 9;
+        const synth = new Tone.Sampler({
+            urls: {
+                A0: 'A0.mp3',
+                C1: 'C1.mp3',
+                'D#1': 'Ds1.mp3',
+                'F#1': 'Fs1.mp3',
+                A1: 'A1.mp3',
+                C2: 'C2.mp3',
+                'D#2': 'Ds2.mp3',
+                'F#2': 'Fs2.mp3',
+                A2: 'A2.mp3',
+                C3: 'C3.mp3',
+                'D#3': 'Ds3.mp3',
+                'F#3': 'Fs3.mp3',
+                A3: 'A3.mp3',
+                C4: 'C4.mp3',
+                'D#4': 'Ds4.mp3',
+                'F#4': 'Fs4.mp3',
+                A4: 'A4.mp3',
+                C5: 'C5.mp3',
+                'D#5': 'Ds5.mp3',
+                'F#5': 'Fs5.mp3',
+                A5: 'A5.mp3',
+                C6: 'C6.mp3',
+                'D#6': 'Ds6.mp3',
+                'F#6': 'Fs6.mp3',
+                A6: 'A6.mp3',
+                C7: 'C7.mp3',
+                'D#7': 'Ds7.mp3',
+                'F#7': 'Fs7.mp3',
+                A7: 'A7.mp3',
+                C8: 'C8.mp3',
+            },
+            release: 10,
+            baseUrl: 'https://tonejs.github.io/audio/salamander/',
+        }).toDestination();
 
-        for (let i = 0; i < totalNotes; i++) {
-            const newNote = {
-                position: currentIndex,
-                octave: currentOctave,
-                name: baseNotes[currentIndex].name + currentOctave,
-                isWhite: baseNotes[currentIndex].isWhite,
-                active: false,
-            };
-            keyList.value.push(newNote);
+        const activeNotes = ref<Note[]>([]);
 
-            if (currentIndex === baseNotes.length - 1) {
-                currentIndex = 0;
-                currentOctave++;
-            } else {
-                currentIndex++;
+        const keyList = computed(() => {
+            const keys: Note[] = [];
+
+            let currentOctave = props.startOctave;
+            let currentIndex = props.startNote;
+
+            for (let i = 0; i < props.totalNotes; i++) {
+                const noteName = baseNotes[currentIndex].name + currentOctave;
+                const isActive =
+                    activeNotes.value.find((note) => note.name === noteName) !==
+                    undefined;
+
+                const newNote = {
+                    position: currentIndex,
+                    octave: currentOctave,
+                    name: noteName,
+                    isWhite: baseNotes[currentIndex].isWhite,
+                    active: isActive,
+                };
+                keys.push(newNote);
+
+                if (currentIndex === baseNotes.length - 1) {
+                    currentIndex = 0;
+                    currentOctave++;
+                } else {
+                    currentIndex++;
+                }
             }
-        }
+
+            return keys;
+        });
 
         const whiteKeys = computed(() => {
             return keyList.value.filter((key) => key.isWhite);
@@ -205,10 +227,12 @@ export default {
             const blackPosition =
                 index * whiteKeyWidth.value +
                 blackKeyWidth.value +
-                whiteKeyWidth.value * note.octave +
+                whiteKeyWidth.value * (note.octave - props.startOctave) +
                 (note.position >= 5
-                    ? whiteKeyWidth.value * note.octave
-                    : whiteKeyWidth.value * (note.octave - 1));
+                    ? whiteKeyWidth.value * (note.octave - props.startOctave)
+                    : whiteKeyWidth.value *
+                      (note.octave - props.startOctave - 1)) +
+                (props.startNote > 5 ? 0 : whiteKeyWidth.value);
 
             const keyStyle = {
                 'background-color': note.isWhite ? '#fff' : '#000',
@@ -225,13 +249,14 @@ export default {
         };
 
         const playNote = (note: Note) => {
-            note.active = true;
+            activeNotes.value.push(note);
             const now = synth.now();
             synth.triggerAttack(note.name, now);
         };
 
         const releaseNote = (note: Note) => {
-            note.active = false;
+            const removeIndex = activeNotes.value.indexOf(note);
+            activeNotes.value.splice(removeIndex, 1);
             const now = synth.now();
             synth.triggerRelease([note.name], now);
         };
