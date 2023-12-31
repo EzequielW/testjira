@@ -58,6 +58,7 @@ import { computed } from 'vue';
 import { ref } from 'vue';
 import * as Tone from 'tone';
 import { Note } from './models';
+import { Midi } from '@tonejs/midi';
 
 export default {
     props: {
@@ -174,10 +175,12 @@ export default {
             baseUrl: 'https://tonejs.github.io/audio/salamander/',
             onload: () => {
                 synthLoaded.value = true;
+                loadTestMidi();
             },
         }).toDestination();
 
         const activeNotes = ref<Note[]>([]);
+
         const keyList = computed(() => {
             const keys: Note[] = [];
 
@@ -271,6 +274,38 @@ export default {
             activeNotes.value.splice(removeIndex, 1);
             const now = synth.now();
             synth.triggerRelease([note.name], now);
+        };
+
+        const loadTestMidi = async () => {
+            const midi = await Midi.fromUrl('./audio/Samples/nocturne_9_3.mid');
+
+            const now = Tone.now() + 0.5;
+            midi.tracks.forEach((track) => {
+                track.notes.forEach((note) => {
+                    synth.triggerAttackRelease(
+                        note.name,
+                        note.duration,
+                        note.time + now,
+                        note.velocity
+                    );
+
+                    Tone.Draw.schedule(() => {
+                        const newNote = keyList.value.find(
+                            (n) => n.name === note.name
+                        );
+                        if (newNote) {
+                            activeNotes.value.push(newNote);
+                        }
+
+                        setTimeout(() => {
+                            const removeIndex = activeNotes.value.findIndex(
+                                (n) => n.name === note.name
+                            );
+                            activeNotes.value.splice(removeIndex, 1);
+                        }, note.duration * 1000);
+                    }, note.time + now);
+                });
+            });
         };
 
         return {
