@@ -3,6 +3,15 @@
         class="piano-background bg-dark col items-end"
         :style="backgroundStyle"
     >
+        <q-btn class="play-button" color="primary" label="Play Nocturne op 9 no 3" :disable="!synthLoaded" @click="loadTestMidi"/>
+        <div 
+            :ref="unwrapDivs.drawnDivs" 
+            class="piano-key drawn-note" 
+            v-for="(note, index) in drawnNotes" 
+            :key="'draw_note_' + index" 
+            :style="drawnNoteStyle(note)"
+            :id="note.id">
+        </div>
         <div v-for="(note, index) in whiteKeys" :key="'octave_separator_' + index">
             <q-separator
                 v-if="note.name.charAt(0) === 'C'"
@@ -67,11 +76,12 @@
 </template>
   
 <script lang="ts">
-import { computed } from 'vue';
+import { computed, watch } from 'vue';
 import { ref } from 'vue';
 import * as Tone from 'tone';
 import { Note } from './models';
 import { Midi } from '@tonejs/midi';
+import anime from 'animejs';
 
 export default {
     props: {
@@ -196,12 +206,14 @@ export default {
             baseUrl: 'https://tonejs.github.io/audio/salamander/',
             onload: () => {
                 synthLoaded.value = true;
-                loadTestMidi();
             },
         }).toDestination();
 
         const activeNotes = ref<Note[]>([]);
-        const drawDelay = 0;
+        const drawnNotes = ref<Note[]>([]);
+        const drawnDivs = ref<any[]>([]);
+        const unwrapDivs = { drawnDivs };
+        const drawDelay = 3;
 
         const whiteKeyWidth = computed(() => {
             const whiteStartKeys = baseNotes.slice(props.startNote, baseNotes.length);
@@ -308,6 +320,19 @@ export default {
             return keyStyle;
         };
 
+        const drawnNoteStyle = (note: Note) => {
+            const style = {
+                left: `${note.posX}px`,
+                width: note.isWhite
+                    ? `${whiteKeyWidth.value}px`
+                    : `${blackKeyWidth.value}px`,
+                height: `${note.height}px`,
+                top: `-${note.height}px`
+            }
+
+            return style;
+        }
+
         const playNote = (note: Note) => {
             activeNotes.value.push(note);
             const now = synth.now();
@@ -324,7 +349,7 @@ export default {
         const loadTestMidi = async () => {
             const midi = await Midi.fromUrl('./audio/Samples/nocturne_9_3.mid');
 
-            const now = Tone.now() + 0.5;
+            const now = Tone.now() + drawDelay;
             midi.tracks.forEach((track) => {
                 track.notes.forEach((note) => {
                     synth.triggerAttackRelease(
@@ -335,20 +360,31 @@ export default {
                     );
 
                     Tone.Draw.schedule(() => {
-                        const newNote = keyList.value.find(
-                            (n) => n.name === note.name
-                        );
+                        const newNote = note.name.includes('#')
+                            ? blackKeys.value.find(n => n.name === note.name) 
+                            : whiteKeys.value.find(n => n.name === note.name);
+
+                        const noteId = `time:${note.time}name:${note.name}`;
+
                         if (newNote) {
-                            activeNotes.value.push(newNote);
+                            const heightPerSecond = (props.height - props.pianoHeight) / 3;
+
+                            drawnNotes.value.push({
+                                ...newNote,
+                                id: noteId,
+                                height: heightPerSecond * note.duration,
+                                moving: false,
+                                duration: note.duration
+                            });
                         }
 
-                        setTimeout(() => {
-                            const removeIndex = activeNotes.value.findIndex(
-                                (n) => n.name === note.name
-                            );
-                            activeNotes.value.splice(removeIndex, 1);
-                        }, note.duration * 1000);
-                    }, note.time + now - drawDelay);
+                        // setTimeout(() => {
+                        //     const removeIndex = drawnNotes.value.findIndex(
+                        //         (n) => n.id === noteId
+                        //     );
+                        //     drawnNotes.value.splice(removeIndex, 1);
+                        // }, (note.duration + drawDelay) * 10000 );
+                    }, now + note.time - drawDelay);
                 });
             });
         };
@@ -357,6 +393,30 @@ export default {
             return activeNotes.value.find((n) => n.name === note.name);
         }
 
+        const animateNotes = () => {
+            drawnDivs.value.forEach(el => {
+                const note = drawnNotes.value.find((note) => note.id === el.id);
+                if(note && !note.moving) {
+                    console.log('drawnDivs.length', drawnDivs.value.length);
+                    anime({
+                        targets: el,
+                        translateY: props.height - props.pianoHeight + (note.height ? note.height : 0),
+                        duration: (drawDelay + (note.duration ? note.duration : 1)) * 1000,
+                        easing: 'linear',
+                        complete: function() {
+                            // el.style={ display: 'none'}
+                        }
+                    });
+                    note.moving = true;
+                }
+            });
+            
+        }
+
+        watch(drawnDivs.value, () => {
+            animateNotes();
+        })
+
         return {
             whiteKeys,
             blackKeys,
@@ -364,10 +424,14 @@ export default {
             backgroundStyle,
             synth,
             synthLoaded,
+            drawnNotes,
+            unwrapDivs,
             getKeyStyle,
+            drawnNoteStyle,
             playNote,
             releaseNote,
-            isNoteActive
+            isNoteActive,
+            loadTestMidi
         };
     },
 };
@@ -388,7 +452,28 @@ export default {
     align-items: flex-end;
 }
 
+.drawn-note {
+    top: 0px;
+    background-color: $accent !important;
+}
+
 .piano-key__active {
     background-color: $accent !important;
+}
+
+.play-button {
+    z-index: 1;
+    position: absolute;
+    top: 50%;
+    left: 0; 
+    right: 0; 
+    margin-left: auto; 
+    margin-right: auto;
+    width: 300px;
+}
+
+.piano-background {
+    position: relative;
+    overflow: hidden;
 }
 </style>

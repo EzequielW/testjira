@@ -1,14 +1,9 @@
-export interface Todo {
-  id: number;
-  content: string;
-}
-
-export interface Meta {
-  totalCount: number;
-}
-
 export interface Note {
+  id?: string;
   posX?: number;
+  height?: number;
+  moving?: boolean;
+  duration?: number;
   position: number;
   octave: number;
   name: string;
