@@ -1,6 +1,6 @@
 <template>
-    <q-page class="row items-end justify-evenly bg-dark">
-        <PianoUI :width="$q.screen.width" />
+    <q-page class="row items-end justify-evenly">
+        <PianoUI :width="$q.screen.width" :height="$q.screen.height"/>
     </q-page>
 </template>
 

@@ -1,55 +1,68 @@
 <template>
-    <div class="piano-container" :style="containerStyle">
-        <div
-            class="piano-key"
-            :class="{ 'piano-key__active': note.active }"
-            v-for="(note, index) in whiteKeys"
-            :key="'white_key_' + index"
-            :style="getKeyStyle(note, index)"
-            @mousedown="
-                (e) => {
-                    e.preventDefault();
-                    playNote(note);
-                }
-            "
-            @mouseover="(e) => e.buttons === 1 && playNote(note)"
-            @mouseup="releaseNote(note)"
-            @mouseleave="releaseNote(note)"
-            draggable="false"
-        >
-            <span class="text-weight-medium" v-if="showNotes">
-                {{ note.name }}
-            </span>
+    <div
+        class="piano-background bg-dark col items-end"
+        :style="backgroundStyle"
+    >
+        <div v-for="(note, index) in whiteKeys" :key="'octave_separator_' + index">
+            <q-separator
+                v-if="note.name.charAt(0) === 'C'"
+                vertical
+                color="grey"
+                :style="{ position: 'absolute', left: `${note.posX}px`, top: '0px', height: '100%' }"
+            />
         </div>
-        <div
-            class="piano-key"
-            :class="{ 'piano-key__active': note.active }"
-            v-for="(note, index) in blackKeys"
-            :key="'black_key_' + index"
-            :style="getKeyStyle(note, index)"
-            @mousedown="
-                (e) => {
-                    e.preventDefault();
-                    playNote(note);
-                }
-            "
-            @mouseover="(e) => e.buttons === 1 && playNote(note)"
-            @mouseup="releaseNote(note)"
-            @mouseleave="releaseNote(note)"
-            draggable="false"
-        >
-            <span class="text-weight-medium text-primary" v-if="showNotes">
-                {{ note.name }}
-            </span>
+        <div class="piano-container" :style="containerStyle">
+            <div
+                class="piano-key"
+                :class="{ 'piano-key__active': isNoteActive(note) }"
+                v-for="(note, index) in whiteKeys"
+                :key="'white_key_' + index"
+                :style="getKeyStyle(note)"
+                @mousedown="
+                    (e) => {
+                        e.preventDefault();
+                        playNote(note);
+                    }
+                "
+                @mouseover="(e) => e.buttons === 1 && playNote(note)"
+                @mouseup="releaseNote(note)"
+                @mouseleave="releaseNote(note)"
+                draggable="false"
+            >
+                <span class="text-weight-medium" v-if="showNotes">
+                    {{ note.name }}
+                </span>
+            </div>
+            <div
+                class="piano-key"
+                :class="{ 'piano-key__active': isNoteActive(note) }"
+                v-for="(note, index) in blackKeys"
+                :key="'black_key_' + index"
+                :style="getKeyStyle(note)"
+                @mousedown="
+                    (e) => {
+                        e.preventDefault();
+                        playNote(note);
+                    }
+                "
+                @mouseover="(e) => e.buttons === 1 && playNote(note)"
+                @mouseup="releaseNote(note)"
+                @mouseleave="releaseNote(note)"
+                draggable="false"
+            >
+                <span class="text-weight-medium text-primary text-caption" v-if="showNotes">
+                    {{ note.name }}
+                </span>
+            </div>
+            <q-inner-loading
+                :showing="!synthLoaded"
+                color="accent"
+                label="Loading keyboard..."
+                label-class="text-white"
+                label-style="font-size: 1.1em"
+                dark
+            />
         </div>
-        <q-inner-loading
-            :showing="!synthLoaded"
-            color="accent"
-            label="Loading keyboard..."
-            label-class="text-white"
-            label-style="font-size: 1.1em"
-            dark
-        />
     </div>
 </template>
   
@@ -65,6 +78,14 @@ export default {
         width: {
             type: Number,
             default: 800,
+        },
+        height: {
+            type: Number,
+            default: 800,
+        },
+        pianoHeight: {
+            type: Number,
+            default: 200,
         },
         showNotes: {
             type: Boolean,
@@ -180,6 +201,22 @@ export default {
         }).toDestination();
 
         const activeNotes = ref<Note[]>([]);
+        const drawDelay = 0;
+
+        const whiteKeyWidth = computed(() => {
+            const whiteStartKeys = baseNotes.slice(props.startNote, baseNotes.length);
+            const extraWhiteStartKeys = whiteStartKeys.filter(bnote => bnote.isWhite).length;
+
+            const whiteEndKeys = baseNotes.slice(0, (props.totalNotes - whiteStartKeys.length) % 12).filter(bnote => bnote.isWhite);
+            const extraWhiteEndKeys = whiteEndKeys.length;
+
+            const whiteKeyCount = Math.floor((props.totalNotes - extraWhiteEndKeys - extraWhiteStartKeys) / 12) * 7 + extraWhiteEndKeys + extraWhiteStartKeys;
+            return props.width / whiteKeyCount;
+        });
+
+        const blackKeyWidth = computed(() => {
+            return whiteKeyWidth.value / 1.5;
+        })
 
         const keyList = computed(() => {
             const keys: Note[] = [];
@@ -189,16 +226,12 @@ export default {
 
             for (let i = 0; i < props.totalNotes; i++) {
                 const noteName = baseNotes[currentIndex].name + currentOctave;
-                const isActive =
-                    activeNotes.value.find((note) => note.name === noteName) !==
-                    undefined;
 
                 const newNote = {
                     position: currentIndex,
                     octave: currentOctave,
                     name: noteName,
                     isWhite: baseNotes[currentIndex].isWhite,
-                    active: isActive,
                 };
                 keys.push(newNote);
 
@@ -214,50 +247,62 @@ export default {
         });
 
         const whiteKeys = computed(() => {
-            return keyList.value.filter((key) => key.isWhite);
+            const whiteNotes = keyList.value.filter((key) => key.isWhite);
+            
+            return whiteNotes.map((note, index) => {
+                const whitePosition = index * whiteKeyWidth.value;
+
+                return {
+                    ...note,
+                    posX: whitePosition
+                }
+            });
         });
 
         const blackKeys = computed(() => {
-            return keyList.value.filter((key) => !key.isWhite);
-        });
+            const blackNotes = keyList.value.filter((key) => !key.isWhite);
 
-        const whiteKeyWidth = computed(() => {
-            return props.width / whiteKeys.value.length;
-        });
+            return blackNotes.map((note, index) => {
+                const blackPosition =
+                    blackKeyWidth.value +
+                    whiteKeyWidth.value * 
+                    (index + 2 * note.octave - 2 * props.startOctave 
+                        + (note.position >= 5 ? 0 : -1)
+                        + (props.startNote >= 5 ? 0 : 1));
 
-        const blackKeyWidth = computed(() => {
-            return whiteKeyWidth.value / 1.5;
+                return {
+                    ...note,
+                    posX: blackPosition
+                }
+            });
         });
 
         const containerStyle = computed(() => {
             const style = {
                 width: `${props.width}px`,
+                height: `${props.pianoHeight}px`,
             };
 
             return style;
         });
 
-        const getKeyStyle = (note: Note, index: number) => {
-            const whitePosition = index * whiteKeyWidth.value;
-            const blackPosition =
-                index * whiteKeyWidth.value +
-                blackKeyWidth.value +
-                whiteKeyWidth.value * (note.octave - props.startOctave) +
-                (note.position >= 5
-                    ? whiteKeyWidth.value * (note.octave - props.startOctave)
-                    : whiteKeyWidth.value *
-                      (note.octave - props.startOctave - 1)) +
-                (props.startNote > 5 ? 0 : whiteKeyWidth.value);
+        const backgroundStyle = computed(() => {
+            const style = {
+                height: `${props.height}px`,
+                display: 'flex',
+            };
 
+            return style;
+        });
+
+        const getKeyStyle = (note: Note) => {
             const keyStyle = {
                 'background-color': note.isWhite ? '#fff' : '#000',
                 width: note.isWhite
                     ? `${whiteKeyWidth.value}px`
                     : `${blackKeyWidth.value}px`,
                 height: note.isWhite ? '100%' : '70%',
-                left: note.isWhite
-                    ? `${whitePosition}px`
-                    : `${blackPosition}px`,
+                left: `${note.posX}px`,
             };
 
             return keyStyle;
@@ -303,20 +348,26 @@ export default {
                             );
                             activeNotes.value.splice(removeIndex, 1);
                         }, note.duration * 1000);
-                    }, note.time + now);
+                    }, note.time + now - drawDelay);
                 });
             });
         };
+
+        const isNoteActive = (note: Note) => {
+            return activeNotes.value.find((n) => n.name === note.name);
+        }
 
         return {
             whiteKeys,
             blackKeys,
             containerStyle,
+            backgroundStyle,
             synth,
             synthLoaded,
             getKeyStyle,
             playNote,
             releaseNote,
+            isNoteActive
         };
     },
 };
@@ -324,7 +375,6 @@ export default {
   
 <style scoped lang='scss'>
 .piano-container {
-    height: 200px;
     position: relative;
 }
 

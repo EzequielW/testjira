@@ -86,3 +86,9 @@ export default defineComponent({
     },
 });
 </script>
+
+<style lang="scss" scoped>
+.q-page-container {
+    padding: 0 !important;
+}
+</style>

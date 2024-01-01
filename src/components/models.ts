@@ -8,9 +8,9 @@ export interface Meta {
 }
 
 export interface Note {
-  position: number,
-  octave: number,
-  name: string,
-  isWhite: boolean,
-  active: boolean
+  posX?: number;
+  position: number;
+  octave: number;
+  name: string;
+  isWhite: boolean;
 }
