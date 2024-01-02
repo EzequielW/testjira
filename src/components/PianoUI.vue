@@ -3,7 +3,13 @@
         class="piano-background bg-dark col items-end"
         :style="backgroundStyle"
     >
-        <q-btn class="play-button" color="primary" label="Play Nocturne op 9 no 3" :disable="!synthLoaded" @click="loadTestMidi"/>
+        <div class="play-button q-gutter-sm">
+            <q-btn color="primary" :disable="!synthLoaded" icon="play_arrow" @click="resumePlaying"/>
+            <q-btn color="primary" :disable="!synthLoaded" icon="pause" @click="stopPlaying"/>
+            <q-btn color="primary" :disable="!synthLoaded" icon="stop" />
+            <q-btn  color="primary" label="Play Nocturne op 9 no 3" :disable="!synthLoaded" @click="loadTestMidi"/>
+        </div>
+
         <div 
             :ref="unwrapDivs.drawnDivs" 
             class="piano-key drawn-note"
@@ -13,6 +19,7 @@
             :style="drawnNoteStyle(note)"
             :id="note.id">
         </div>
+
         <div v-for="(note, index) in whiteKeys" :key="'octave_separator_' + index">
             <q-separator
                 v-if="note.name.charAt(0) === 'C'"
@@ -21,6 +28,7 @@
                 :style="{ position: 'absolute', left: `${note.posX}px`, top: '0px', height: '100%' }"
             />
         </div>
+
         <div class="piano-container" :style="containerStyle">
             <div
                 class="piano-key"
@@ -217,6 +225,9 @@ export default {
         const unwrapDivs = { drawnDivs };
         const drawDelay = 4;
 
+        const animationList = ref<anime.AnimeInstance[]>([]);
+        const paused = ref(false);
+
         const whiteKeyWidth = computed(() => {
             const whiteStartKeys = baseNotes.slice(props.startNote, baseNotes.length);
             const extraWhiteStartKeys = whiteStartKeys.filter(bnote => bnote.isWhite).length;
@@ -350,47 +361,64 @@ export default {
 
         const loadTestMidi = async () => {
             const midi = await Midi.fromUrl('./audio/Samples/nocturne_9_3.mid');
+            synth.sync();
+            await Tone.start();
+            Tone.Transport.start();
 
-            const now = Tone.now() + drawDelay;
+            const now = synth.now() + drawDelay;
             midi.tracks.forEach((track) => {
                 track.notes.forEach((note) => {
-                    synth.triggerAttackRelease(
-                        note.name,
-                        note.duration,
-                        note.time + now,
-                        note.velocity
-                    );
+                    let newNote = note.name.includes('#')
+                        ? blackKeys.value.find(n => n.name === note.name) 
+                        : whiteKeys.value.find(n => n.name === note.name);
 
-                    Tone.Draw.schedule(() => {
-                        let newNote = note.name.includes('#')
-                            ? blackKeys.value.find(n => n.name === note.name) 
-                            : whiteKeys.value.find(n => n.name === note.name);
+                    const noteId = `time:${note.time}name:${note.name}`;
 
-                        const noteId = `time:${note.time}name:${note.name}`;
+                    let drawnNote: Note | undefined = undefined;
 
-                        if (newNote) {
-                            const heightPerSecond = (props.height - props.pianoHeight) / drawDelay;
+                    if (newNote) {
+                        const heightPerSecond = (props.height - props.pianoHeight) / drawDelay;
 
-                            const drawnNote: Note = {
-                                ...newNote,
-                                id: noteId,
-                                height: heightPerSecond * note.duration,
-                                moving: false,
-                                duration: note.duration
-                            }
-
-                            drawnNotes.value[noteId] = drawnNote;
-
-                            setTimeout(() => {
-                                activeNotes.value.push(drawnNote);
-                                    
-                                setTimeout(() => {
-                                    const removeIndex = activeNotes.value.indexOf(drawnNote);
-                                    activeNotes.value.splice(removeIndex, 1);
-                                }, (drawnNote.duration ? drawnNote.duration : 1) * 1000);
-                            }, (drawDelay) * 1000);
+                        drawnNote = {
+                            ...newNote,
+                            id: noteId,
+                            height: heightPerSecond * note.duration,
+                            moving: false,
+                            duration: note.duration
                         }
+                    }
+
+                    Tone.Transport.schedule(function(time){
+                        synth.triggerAttackRelease(
+                            note.name,
+                            note.duration,
+                            note.time + now,
+                            note.velocity
+                        );
+
+                        Tone.Draw.schedule(() => {
+                            if(drawnNote) {
+                                drawnNotes.value[noteId] = drawnNote;
+                            }
+                        }, time);
                     }, now + note.time - drawDelay);
+
+                    Tone.Transport.schedule(function(time){
+                        Tone.Draw.schedule(() => {
+                            if(drawnNote) {
+                                activeNotes.value.push(drawnNote);
+                            }
+                        }, time);
+                    }, now + note.time);
+
+                    Tone.Transport.schedule(function(time){
+                        Tone.Draw.schedule(() => {
+                            if(drawnNote) {
+                                const removeIndex = activeNotes.value.indexOf(drawnNote);
+                                activeNotes.value.splice(removeIndex, 1);
+                            }
+                        }, time);
+                    }, now + note.time + note.duration);
                 });
             });
         };
@@ -403,7 +431,7 @@ export default {
             drawnDivs.value.forEach(el => {
                 const note = drawnNotes.value[el.id];
                 if(note && !note.moving) {
-                    anime({
+                    const newAnimation = anime({
                         targets: el,
                         translateY: props.height - props.pianoHeight + (note.height ? note.height : 0),
                         duration: (drawDelay + (note.duration ? note.duration : 1)) * 1000,
@@ -416,14 +444,35 @@ export default {
                             }
                         }
                     });
+                    if(paused.value) {
+                        newAnimation.pause();
+                    }
+
+                    animationList.value.push(newAnimation);
                     note.moving = true;
                 }
             });
         }
 
+        const stopPlaying = () => {
+            paused.value = true;
+            Tone.Transport.pause();
+            animationList.value.forEach(animation => {
+                animation.pause();
+            });
+        }
+
+        const resumePlaying = () => {
+            animationList.value.forEach(animation => {
+                animation.play();
+            });
+            Tone.Transport.start();
+            paused.value = false;
+        }
+
         watch(drawnDivs.value, () => {
             animateNotes();
-        })
+        });
 
         return {
             whiteKeys,
@@ -439,7 +488,9 @@ export default {
             playNote,
             releaseNote,
             isNoteActive,
-            loadTestMidi
+            loadTestMidi,
+            stopPlaying,
+            resumePlaying
         };
     },
 };
@@ -482,7 +533,7 @@ export default {
     right: 0; 
     margin-left: auto; 
     margin-right: auto;
-    width: 300px;
+    width: 500px;
 }
 
 .piano-background {
