@@ -9,3 +9,7 @@ export interface Note {
   name: string;
   isWhite: boolean;
 }
+
+export interface NoteDict{
+  [id: string]: Note;
+}

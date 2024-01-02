@@ -6,7 +6,8 @@
         <q-btn class="play-button" color="primary" label="Play Nocturne op 9 no 3" :disable="!synthLoaded" @click="loadTestMidi"/>
         <div 
             :ref="unwrapDivs.drawnDivs" 
-            class="piano-key drawn-note" 
+            class="piano-key drawn-note"
+            :class="{ 'drawn-note__black': !note.isWhite }" 
             v-for="(note, index) in drawnNotes" 
             :key="'draw_note_' + index" 
             :style="drawnNoteStyle(note)"
@@ -79,7 +80,7 @@
 import { computed, watch } from 'vue';
 import { ref } from 'vue';
 import * as Tone from 'tone';
-import { Note } from './models';
+import { Note, NoteDict } from './models';
 import { Midi } from '@tonejs/midi';
 import anime from 'animejs';
 
@@ -210,10 +211,11 @@ export default {
         }).toDestination();
 
         const activeNotes = ref<Note[]>([]);
-        const drawnNotes = ref<Note[]>([]);
+
+        const drawnNotes = ref<NoteDict>({});
         const drawnDivs = ref<any[]>([]);
         const unwrapDivs = { drawnDivs };
-        const drawDelay = 3;
+        const drawDelay = 4;
 
         const whiteKeyWidth = computed(() => {
             const whiteStartKeys = baseNotes.slice(props.startNote, baseNotes.length);
@@ -367,23 +369,17 @@ export default {
                         const noteId = `time:${note.time}name:${note.name}`;
 
                         if (newNote) {
-                            const heightPerSecond = (props.height - props.pianoHeight) / 3;
+                            const heightPerSecond = (props.height - props.pianoHeight) / drawDelay;
 
-                            drawnNotes.value.push({
+                            drawnNotes.value[noteId] = {
                                 ...newNote,
                                 id: noteId,
                                 height: heightPerSecond * note.duration,
                                 moving: false,
                                 duration: note.duration
-                            });
+                            };
                         }
 
-                        // setTimeout(() => {
-                        //     const removeIndex = drawnNotes.value.findIndex(
-                        //         (n) => n.id === noteId
-                        //     );
-                        //     drawnNotes.value.splice(removeIndex, 1);
-                        // }, (note.duration + drawDelay) * 10000 );
                     }, now + note.time - drawDelay);
                 });
             });
@@ -395,22 +391,24 @@ export default {
 
         const animateNotes = () => {
             drawnDivs.value.forEach(el => {
-                const note = drawnNotes.value.find((note) => note.id === el.id);
+                const note = drawnNotes.value[el.id];
                 if(note && !note.moving) {
-                    console.log('drawnDivs.length', drawnDivs.value.length);
                     anime({
                         targets: el,
                         translateY: props.height - props.pianoHeight + (note.height ? note.height : 0),
                         duration: (drawDelay + (note.duration ? note.duration : 1)) * 1000,
                         easing: 'linear',
                         complete: function() {
-                            // el.style={ display: 'none'}
+                            el.style={ display: 'none'}
+
+                            if(note.id) {
+                                delete drawnNotes.value[note.id];
+                            }
                         }
                     });
                     note.moving = true;
                 }
             });
-            
         }
 
         watch(drawnDivs.value, () => {
@@ -455,6 +453,11 @@ export default {
 .drawn-note {
     top: 0px;
     background-color: $accent !important;
+    border-radius: 5px;
+}
+
+.drawn-note__black {
+    background-color: $accent-dark !important;
 }
 
 .piano-key__active {
