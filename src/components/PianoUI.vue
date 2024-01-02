@@ -362,7 +362,7 @@ export default {
                     );
 
                     Tone.Draw.schedule(() => {
-                        const newNote = note.name.includes('#')
+                        let newNote = note.name.includes('#')
                             ? blackKeys.value.find(n => n.name === note.name) 
                             : whiteKeys.value.find(n => n.name === note.name);
 
@@ -371,15 +371,25 @@ export default {
                         if (newNote) {
                             const heightPerSecond = (props.height - props.pianoHeight) / drawDelay;
 
-                            drawnNotes.value[noteId] = {
+                            const drawnNote: Note = {
                                 ...newNote,
                                 id: noteId,
                                 height: heightPerSecond * note.duration,
                                 moving: false,
                                 duration: note.duration
-                            };
-                        }
+                            }
 
+                            drawnNotes.value[noteId] = drawnNote;
+
+                            setTimeout(() => {
+                                activeNotes.value.push(drawnNote);
+                                    
+                                setTimeout(() => {
+                                    const removeIndex = activeNotes.value.indexOf(drawnNote);
+                                    activeNotes.value.splice(removeIndex, 1);
+                                }, (drawnNote.duration ? drawnNote.duration : 1) * 1000);
+                            }, (drawDelay) * 1000);
+                        }
                     }, now + note.time - drawDelay);
                 });
             });
