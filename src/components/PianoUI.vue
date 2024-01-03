@@ -3,11 +3,10 @@
         class="piano-background bg-dark col items-end"
         :style="backgroundStyle"
     >
-        <div class="play-button q-gutter-sm">
-            <q-btn color="primary" :disable="!synthLoaded" icon="play_arrow" @click="resumePlaying"/>
-            <q-btn color="primary" :disable="!synthLoaded" icon="pause" @click="stopPlaying"/>
-            <q-btn color="primary" :disable="!synthLoaded" icon="stop" />
-            <q-btn  color="primary" label="Play Nocturne op 9 no 3" :disable="!synthLoaded" @click="loadTestMidi"/>
+        <div class="play-button row justify-center q-gutter-sm">
+            <q-btn color="primary" :disable="!synthLoaded" icon="play_arrow" @click="resumePlaying" />
+            <q-btn color="primary" :disable="!synthLoaded" icon="pause" @click="pausePlaying" />
+            <q-btn color="primary" :disable="!synthLoaded" icon="stop" @click="stopPlaying" />
         </div>
 
         <div 
@@ -227,6 +226,7 @@ export default {
 
         const animationList = ref<anime.AnimeInstance[]>([]);
         const paused = ref(false);
+        const stopped = ref(true);
 
         const whiteKeyWidth = computed(() => {
             const whiteStartKeys = baseNotes.slice(props.startNote, baseNotes.length);
@@ -405,7 +405,7 @@ export default {
 
                     Tone.Transport.schedule(function(time){
                         Tone.Draw.schedule(() => {
-                            if(drawnNote) {
+                            if(drawnNote && !stopped.value) {
                                 activeNotes.value.push(drawnNote);
                             }
                         }, time);
@@ -430,7 +430,7 @@ export default {
         const animateNotes = () => {
             drawnDivs.value.forEach(el => {
                 const note = drawnNotes.value[el.id];
-                if(note && !note.moving) {
+                if(note && !note.moving && !stopped.value) {
                     const newAnimation = anime({
                         targets: el,
                         translateY: props.height - props.pianoHeight + (note.height ? note.height : 0),
@@ -454,7 +454,7 @@ export default {
             });
         }
 
-        const stopPlaying = () => {
+        const pausePlaying = () => {
             paused.value = true;
             Tone.Transport.pause();
             animationList.value.forEach(animation => {
@@ -462,12 +462,26 @@ export default {
             });
         }
 
-        const resumePlaying = () => {
-            animationList.value.forEach(animation => {
-                animation.play();
-            });
-            Tone.Transport.start();
-            paused.value = false;
+        const resumePlaying = async () => {
+            if(stopped.value) {
+                stopped.value = false;
+                await loadTestMidi();
+            }
+            else {
+                animationList.value.forEach(animation => {
+                    animation.play();
+                });
+                Tone.Transport.start();
+                paused.value = false;
+            }
+        }
+
+        const stopPlaying = () => {
+            stopped.value = true;
+            Tone.Transport.cancel();
+            animationList.value = [];
+            drawnNotes.value = {};
+            activeNotes.value = [];
         }
 
         watch(drawnDivs.value, () => {
@@ -489,8 +503,9 @@ export default {
             releaseNote,
             isNoteActive,
             loadTestMidi,
-            stopPlaying,
-            resumePlaying
+            pausePlaying,
+            resumePlaying,
+            stopPlaying
         };
     },
 };
