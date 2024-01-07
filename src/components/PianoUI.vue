@@ -340,20 +340,54 @@ export default {
                     ? `${whiteKeyWidth.value}px`
                     : `${blackKeyWidth.value}px`,
                 height: `${note.height}px`,
-                top: `-${note.height}px`
+                ...( note.startPosY && { top: `${note.startPosY}px` } )
             }
 
             return style;
         }
 
         const playNote = (note: Note) => {
-            activeNotes.value.push(note);
             const now = synth.now();
             synth.triggerAttack(note.name, now);
+
+            let newNote = note.name.includes('#')
+                ? blackKeys.value.find(n => n.name === note.name) 
+                : whiteKeys.value.find(n => n.name === note.name);
+
+            const noteId = `time:${now}name:${note.name}`;
+
+            let drawnNote: Note | undefined = undefined;
+            if (newNote && stopped.value) {
+                const heightPerSecond = (props.height - props.pianoHeight) / drawDelay;
+                const height = heightPerSecond * 0.05;
+
+                drawnNote = {
+                    ...newNote,
+                    id: noteId,
+                    height: height,
+                    startPosY: props.height - props.pianoHeight,
+                    endPosY: -props.height + props.pianoHeight - height,
+                    moving: false,
+                    duration: 0.05,
+                    timeStart: now,
+                    released: false
+                }
+
+                drawnNotes.value[noteId] = drawnNote;
+            }
+
+            activeNotes.value.push(drawnNote ? drawnNote : note);
         };
 
         const releaseNote = (note: Note) => {
-            const removeIndex = activeNotes.value.indexOf(note);
+            const removeIndex = activeNotes.value.findIndex((n) => n.name === note.name);
+            if(removeIndex >= 0 && stopped.value) {
+                const id = activeNotes.value[removeIndex].id;
+                if(id && drawnNotes.value[id]) {
+                    drawnNotes.value[id].released = true;
+                }
+            }
+
             activeNotes.value.splice(removeIndex, 1);
             const now = synth.now();
             synth.triggerRelease([note.name], now);
@@ -378,11 +412,14 @@ export default {
 
                     if (newNote) {
                         const heightPerSecond = (props.height - props.pianoHeight) / drawDelay;
+                        const height = heightPerSecond * note.duration;
 
                         drawnNote = {
                             ...newNote,
                             id: noteId,
-                            height: heightPerSecond * note.duration,
+                            height: height,
+                            startPosY: -height,
+                            endPosY: props.height - props.pianoHeight + height,
                             moving: false,
                             duration: note.duration
                         }
@@ -430,25 +467,50 @@ export default {
         const animateNotes = () => {
             drawnDivs.value.forEach(el => {
                 const note = drawnNotes.value[el.id];
-                if(note && !note.moving && !stopped.value) {
-                    const newAnimation = anime({
-                        targets: el,
-                        translateY: props.height - props.pianoHeight + (note.height ? note.height : 0),
-                        duration: (drawDelay + (note.duration ? note.duration : 1)) * 1000,
-                        easing: 'linear',
-                        complete: function() {
-                            el.style={ display: 'none'}
+                const noteMovesUp = (note.startPosY && note.endPosY && note.startPosY > note.endPosY);
+                if(note && !note.moving && (!stopped.value || noteMovesUp)) {
+                    const addAnimation = (newEndPosition: number) => {
+                        const newAnimation = anime({
+                            targets: el,
+                            translateY: newEndPosition,
+                            duration: (drawDelay + (note.duration ? note.duration : 1)) * 1000,
+                            easing: 'linear',
+                            complete: function() {
+                                if(note.id) {
+                                    const newPosition = (note.endPosY ? note.endPosY : 0) - props.height + props.pianoHeight - (note.height ? note.height : 0);
 
-                            if(note.id) {
-                                delete drawnNotes.value[note.id];
+                                    if(note.released === false || (noteMovesUp && newPosition < newEndPosition * 2)) {
+                                        addAnimation(newPosition);
+                                    }
+                                    else {
+                                        el.style={ display: 'none'}
+                                        delete drawnNotes.value[note.id];
+                                    }     
+                                }
+
+                            
+                            },
+                            update: function() {
+                                if(note.released === false) {
+                                    const timeStart = (note.timeStart ? note.timeStart : 0);
+                                    const heightPerSecond = (props.height - props.pianoHeight) / drawDelay;
+
+                                    note.duration = synth.now() - timeStart;
+                                    note.height = heightPerSecond * note.duration;
+                                }
                             }
-                        }
-                    });
-                    if(paused.value) {
-                        newAnimation.pause();
-                    }
+                        });
 
-                    animationList.value.push(newAnimation);
+                        note.endPosY = newEndPosition;
+
+                        if(paused.value) {
+                            newAnimation.pause();
+                        }
+
+                        animationList.value.push(newAnimation);
+                    }
+                    addAnimation(note.endPosY ? note.endPosY : 0);
+                    
                     note.moving = true;
                 }
             });
@@ -527,7 +589,7 @@ export default {
 }
 
 .drawn-note {
-    top: 0px;
+    top: 1000px;
     background-color: $accent !important;
     border-radius: 5px;
 }
