@@ -7,6 +7,7 @@ export interface Note {
   moving?: boolean;
   duration?: number;
   timeStart?: number;
+  midi: number;
   position: number;
   octave: number;
   name: string;

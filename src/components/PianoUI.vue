@@ -7,6 +7,7 @@
             <q-btn color="primary" :disable="!synthLoaded" icon="play_arrow" @click="resumePlaying" />
             <q-btn color="primary" :disable="!synthLoaded" icon="pause" @click="pausePlaying" />
             <q-btn color="primary" :disable="!synthLoaded" icon="stop" @click="stopPlaying" />
+            <q-btn text-color="negative" color="primary" :disable="!synthLoaded" icon="radio_button_checked" @click="startRecording" />
             <span class="text-h6 text-white">{{ currentTime }}</span>
         </div>
 
@@ -89,8 +90,9 @@ import { computed, watch } from 'vue';
 import { ref } from 'vue';
 import * as Tone from 'tone';
 import { Note, NoteDict } from './models';
-import { Midi } from '@tonejs/midi';
+import { Midi, MidiJSON } from '@tonejs/midi';
 import anime from 'animejs';
+import { NoteJSON } from '@tonejs/midi/dist/Note';
 
 export default {
     props: {
@@ -231,6 +233,7 @@ export default {
         const activeNotes = ref<Note[]>([]);
 
         const drawnNotes = ref<NoteDict>({});
+        const recordedNotes = ref<NoteDict>({});
         const drawnDivs = ref<any[]>([]);
         const unwrapDivs = { drawnDivs };
         const drawDelay = 4;
@@ -239,6 +242,7 @@ export default {
         const paused = ref(false);
         const stopped = ref(true);
         const currentTime = ref('');
+        const recording = ref(false);
 
         const whiteKeyWidth = computed(() => {
             const whiteStartKeys = baseNotes.slice(props.startNote, baseNotes.length);
@@ -269,6 +273,7 @@ export default {
                     octave: currentOctave,
                     name: noteName,
                     isWhite: baseNotes[currentIndex].isWhite,
+                    midi: 12 + currentOctave * 12 + currentIndex
                 };
                 keys.push(newNote);
 
@@ -360,7 +365,7 @@ export default {
 
         const playNote = (note: Note) => {
             const now = synthPlayer.now();
-            synthPlayer.triggerAttack(note.name, now);
+            synthPlayer.triggerAttack(note.name, now, 0.5);
 
             let newNote = note.name.includes('#')
                 ? blackKeys.value.find(n => n.name === note.name) 
@@ -381,7 +386,7 @@ export default {
                     endPosY: -props.height + props.pianoHeight - height,
                     moving: false,
                     duration: 0.05,
-                    timeStart: now,
+                    timeStart: recording.value ? Tone.Transport.seconds : now,
                     released: false
                 }
 
@@ -397,6 +402,9 @@ export default {
                 const id = activeNotes.value[removeIndex].id;
                 if(id && drawnNotes.value[id]) {
                     drawnNotes.value[id].released = true;
+                    if(recording.value) {
+                        recordedNotes.value[id] = drawnNotes.value[id];
+                    }
                 }
             }
 
@@ -405,14 +413,23 @@ export default {
             synthPlayer.triggerRelease([note.name], now);
         };
 
-        const loadTestMidi = async () => {
-            const midi = await Midi.fromUrl('./audio/Samples/nocturne_9_3.mid');
+        const loadTestMidi = async (midiPiece?: Midi) => {
+            let midi = new Midi();
+            if(midiPiece) {
+                midi = midiPiece;
+            }
+            else {
+                midi = await Midi.fromUrl('./audio/Samples/nocturne_9_3.mid');
+            }
+            
             synth.sync();
             await Tone.start();
             Tone.Transport.start();
 
             const now = Tone.Transport.seconds + drawDelay;
+            console.log('midi', midi);
             midi.tracks.forEach((track) => {
+                console.log('trackFormat', track)
                 track.notes.forEach((note) => {
                     let newNote = note.name.includes('#')
                         ? blackKeys.value.find(n => n.name === note.name) 
@@ -506,8 +523,9 @@ export default {
                                 if(note.released === false) {
                                     const timeStart = (note.timeStart ? note.timeStart : 0);
                                     const heightPerSecond = (props.height - props.pianoHeight) / drawDelay;
+                                    const now = recording.value ? Tone.Transport.seconds : synthPlayer.now();
 
-                                    note.duration = synthPlayer.now() - timeStart;
+                                    note.duration = now - timeStart;
                                     note.height = heightPerSecond * note.duration;
                                 }
                             }
@@ -539,7 +557,14 @@ export default {
         const resumePlaying = async () => {
             if(stopped.value) {
                 stopped.value = false;
-                await loadTestMidi();
+
+                if(Object.keys(recordedNotes.value).length > 0) {
+                    const savedTrack = recordingToMidi();
+                    await loadTestMidi(savedTrack);
+                }
+                else {
+                    await loadTestMidi();
+                }
             }
             else {
                 animationList.value.forEach(animation => {
@@ -551,6 +576,7 @@ export default {
         }
 
         const stopPlaying = () => {
+            synthPlayer.unsync();
             stopped.value = true;
             paused.value = false;
             Tone.Transport.cancel();
@@ -558,6 +584,59 @@ export default {
             animationList.value = [];
             drawnNotes.value = {};
             activeNotes.value = [];
+            recording.value = false;
+            console.log('recordedNotes: ', recordedNotes.value);
+        }
+
+        const startRecording = async () => {
+            recordedNotes.value = {};
+            recording.value = true;
+            await Tone.start();
+            synthPlayer.sync();
+            Tone.Transport.start();
+        }
+
+        const recordingToMidi = () => {
+            const notes: NoteJSON[] = Object.values(recordedNotes.value).map((note) => {
+                return {
+                    name: note.name,
+                    duration: note.duration ? note.duration : 0,
+                    time: note.timeStart ? note.timeStart : 0,
+                    velocity: 0.5,
+                    midi: note.midi,
+                    ticks: synthPlayer.toTicks(note.timeStart ? note.timeStart : 0),
+                    durationTicks: synthPlayer.toTicks(note.duration ? note.duration : 0)
+                }
+            });
+
+            const newMidiJson: MidiJSON = {
+                header: {
+                    keySignatures: [],
+                    meta: [],
+                    name: 'New track',
+                    tempos: [],
+                    timeSignatures: [],
+                    ppq: 192
+                },
+                tracks: [
+                    {
+                        name: 'GRAND PIANO',
+                        instrument: {
+                            number: 0,
+                            family: 'piano',
+                            name: 'acoustic grand piano'
+                        },
+                        channel: 0,
+                        controlChanges: {},
+                        pitchBends: [],
+                        notes: notes
+                    }
+                ]
+            }
+            const newMidi = new Midi();
+            newMidi.fromJSON(newMidiJson);
+
+            return newMidi;
         }
 
         setInterval(() => {
@@ -586,7 +665,8 @@ export default {
             loadTestMidi,
             pausePlaying,
             resumePlaying,
-            stopPlaying
+            stopPlaying,
+            startRecording
         };
     },
 };
