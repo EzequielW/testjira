@@ -7,6 +7,7 @@
             <q-btn color="primary" :disable="!synthLoaded" icon="play_arrow" @click="resumePlaying" />
             <q-btn color="primary" :disable="!synthLoaded" icon="pause" @click="pausePlaying" />
             <q-btn color="primary" :disable="!synthLoaded" icon="stop" @click="stopPlaying" />
+            <span class="text-h6 text-white">{{ currentTime }}</span>
         </div>
 
         <div 
@@ -176,40 +177,50 @@ export default {
         ];
 
         const synthLoaded = ref(false);
+        const synthUrls = {
+            A0: 'A0.mp3',
+            C1: 'C1.mp3',
+            'D#1': 'Ds1.mp3',
+            'F#1': 'Fs1.mp3',
+            A1: 'A1.mp3',
+            C2: 'C2.mp3',
+            'D#2': 'Ds2.mp3',
+            'F#2': 'Fs2.mp3',
+            A2: 'A2.mp3',
+            C3: 'C3.mp3',
+            'D#3': 'Ds3.mp3',
+            'F#3': 'Fs3.mp3',
+            A3: 'A3.mp3',
+            C4: 'C4.mp3',
+            'D#4': 'Ds4.mp3',
+            'F#4': 'Fs4.mp3',
+            A4: 'A4.mp3',
+            C5: 'C5.mp3',
+            'D#5': 'Ds5.mp3',
+            'F#5': 'Fs5.mp3',
+            A5: 'A5.mp3',
+            C6: 'C6.mp3',
+            'D#6': 'Ds6.mp3',
+            'F#6': 'Fs6.mp3',
+            A6: 'A6.mp3',
+            C7: 'C7.mp3',
+            'D#7': 'Ds7.mp3',
+            'F#7': 'Fs7.mp3',
+            A7: 'A7.mp3',
+            C8: 'C8.mp3',
+        };
 
         const synth = new Tone.Sampler({
-            urls: {
-                A0: 'A0.mp3',
-                C1: 'C1.mp3',
-                'D#1': 'Ds1.mp3',
-                'F#1': 'Fs1.mp3',
-                A1: 'A1.mp3',
-                C2: 'C2.mp3',
-                'D#2': 'Ds2.mp3',
-                'F#2': 'Fs2.mp3',
-                A2: 'A2.mp3',
-                C3: 'C3.mp3',
-                'D#3': 'Ds3.mp3',
-                'F#3': 'Fs3.mp3',
-                A3: 'A3.mp3',
-                C4: 'C4.mp3',
-                'D#4': 'Ds4.mp3',
-                'F#4': 'Fs4.mp3',
-                A4: 'A4.mp3',
-                C5: 'C5.mp3',
-                'D#5': 'Ds5.mp3',
-                'F#5': 'Fs5.mp3',
-                A5: 'A5.mp3',
-                C6: 'C6.mp3',
-                'D#6': 'Ds6.mp3',
-                'F#6': 'Fs6.mp3',
-                A6: 'A6.mp3',
-                C7: 'C7.mp3',
-                'D#7': 'Ds7.mp3',
-                'F#7': 'Fs7.mp3',
-                A7: 'A7.mp3',
-                C8: 'C8.mp3',
+            urls: synthUrls,
+            release: 10,
+            baseUrl: 'https://tonejs.github.io/audio/salamander/',
+            onload: () => {
+                synthLoaded.value = true;
             },
+        }).toDestination();
+
+        const synthPlayer = new Tone.Sampler({
+            urls: synthUrls,
             release: 10,
             baseUrl: 'https://tonejs.github.io/audio/salamander/',
             onload: () => {
@@ -227,6 +238,7 @@ export default {
         const animationList = ref<anime.AnimeInstance[]>([]);
         const paused = ref(false);
         const stopped = ref(true);
+        const currentTime = ref('');
 
         const whiteKeyWidth = computed(() => {
             const whiteStartKeys = baseNotes.slice(props.startNote, baseNotes.length);
@@ -347,8 +359,8 @@ export default {
         }
 
         const playNote = (note: Note) => {
-            const now = synth.now();
-            synth.triggerAttack(note.name, now);
+            const now = synthPlayer.now();
+            synthPlayer.triggerAttack(note.name, now);
 
             let newNote = note.name.includes('#')
                 ? blackKeys.value.find(n => n.name === note.name) 
@@ -389,8 +401,8 @@ export default {
             }
 
             activeNotes.value.splice(removeIndex, 1);
-            const now = synth.now();
-            synth.triggerRelease([note.name], now);
+            const now = synthPlayer.now();
+            synthPlayer.triggerRelease([note.name], now);
         };
 
         const loadTestMidi = async () => {
@@ -399,7 +411,7 @@ export default {
             await Tone.start();
             Tone.Transport.start();
 
-            const now = synth.now() + drawDelay;
+            const now = Tone.Transport.seconds + drawDelay;
             midi.tracks.forEach((track) => {
                 track.notes.forEach((note) => {
                     let newNote = note.name.includes('#')
@@ -495,7 +507,7 @@ export default {
                                     const timeStart = (note.timeStart ? note.timeStart : 0);
                                     const heightPerSecond = (props.height - props.pianoHeight) / drawDelay;
 
-                                    note.duration = synth.now() - timeStart;
+                                    note.duration = synthPlayer.now() - timeStart;
                                     note.height = heightPerSecond * note.duration;
                                 }
                             }
@@ -540,11 +552,17 @@ export default {
 
         const stopPlaying = () => {
             stopped.value = true;
+            paused.value = false;
             Tone.Transport.cancel();
+            Tone.Transport.stop();
             animationList.value = [];
             drawnNotes.value = {};
             activeNotes.value = [];
         }
+
+        setInterval(() => {
+            currentTime.value = Math.floor(Tone.Transport.seconds / 60) + ':' + Math.floor(Tone.Transport.seconds % 60).toString().padStart(2, "0")
+        }, 1000);
 
         watch(drawnDivs.value, () => {
             animateNotes();
@@ -559,6 +577,7 @@ export default {
             synthLoaded,
             drawnNotes,
             unwrapDivs,
+            currentTime,
             getKeyStyle,
             drawnNoteStyle,
             playNote,
